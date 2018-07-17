@@ -1,0 +1,5 @@
+profile: service
+defaultPackage: twitter
+---
+testFramework: spock
+sourceLanguage: groovy

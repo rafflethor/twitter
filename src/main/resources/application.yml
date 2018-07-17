@@ -1,0 +1,6 @@
+micronaut:
+    application:
+        name: twitter
+
+    server:
+        port: 8080
