@@ -7,18 +7,18 @@ import io.micronaut.http.annotation.Controller
 import io.micronaut.http.annotation.Get
 import io.micronaut.http.client.Client
 import io.micronaut.http.client.RxHttpClient
-import twitter4j.Query
-import twitter4j.QueryResult
-import twitter4j.TwitterException
-import twitter4j.TwitterFactory
+import twitter4j.*
 
 import javax.inject.Inject
+import java.text.SimpleDateFormat
 
+
+/**
+    Connect to the twitter API to return tweets by hashtag accepting filters
+    Sample query: raffle?hashtag=piweek14&since=2018-07-16&until=2018-07-18&numWinners=4
+ */
 @CompileStatic
 @Controller("/raffle")
-/*
-    Sample query: raffle?hashtag=piweek14&since=2018-07-16&until=2018-07-17
- */
 class RaffleController {
     @Client("https://twitter.com")
     @Inject
@@ -28,17 +28,24 @@ class RaffleController {
     HttpResponse<Map> newRaffle(HttpRequest<?> request) {
 
         Map<String, ?> params = getParams(request)
-        String twitterResponse = getUsersByHashtag(
+        List<Status> twitterResponse = getUsersByHashtag(
             params.hashtag.toString(),
             params.until.toString(),
             params.since.toString()
         )
 
-        return HttpResponse.ok([twitterResponse: twitterResponse] as Map)
+        Map<String, List> response = [ winners: [], tweeters:  [], tweets: [] ] as Map
+        if (twitterResponse) {
+            response.winners = getWinners(twitterResponse, params.numWinners as Integer)
+            response.tweeters = getTweeters(twitterResponse)
+            response.tweets = getTweets(twitterResponse)
+        }
+
+        return HttpResponse.ok(response as Map)
             .header("X-My-Header", "Foo")
     }
 
-    Map getUsersByHashtag(String hashtag, String until, String since) {
+    List<Status> getUsersByHashtag(String hashtag, String until, String since) {
         twitter4j.Twitter twitter = TwitterFactory.getSingleton()
 
         Query query = getQuery(hashtag, until, since)
@@ -48,22 +55,10 @@ class RaffleController {
         try {
             twitterResponse = twitter.search(query)
         } catch (TwitterException e) {
-            println "Couldn't connect: " + e
-            return [error: "Couldn't connect to " + e.message]
+            println "Couldn't connect to " + e.message
         }
 
-        Map response = [
-            tweeters: twitterResponse.tweets.collect { it.user.name }.unique().sort(),
-            tweets  : twitterResponse.tweets.collect {[
-                    user : it.user.screenName,
-                    tweet: it.text,
-                    date : fixTimeZone(it.createdAt)
-                ]}
-                .sort { it.date }
-                .reverse()
-        ]
-
-        return response
+        return twitterResponse.tweets
     }
 
     private Query getQuery(String hashtag, String until, String since) {
@@ -74,6 +69,36 @@ class RaffleController {
         query.sinceId(1)
 
         return query
+    }
+
+    private List getTweets(List<Status> tweets) {
+        List result = tweets.collect {[
+            user : it.user.screenName,
+            tweet: it.text,
+            date : new SimpleDateFormat("EEE, MMMM dd yyyy, 'at' hh:mm", Locale.ENGLISH)
+                .format(fixTimeZone(it.createdAt))
+        ]}
+        .sort { it.date }
+            .reverse()
+
+        return result
+    }
+
+    private List<String> getTweeters(List<Status> tweets) {
+        return tweets.collect { it.user.name }.unique().sort()
+    }
+
+    private List<String> getWinners(List<Status> tweets, Integer numWinners) {
+        List<Status> winners = []
+
+        while (winners.size() < numWinners) {
+            Collections.shuffle tweets
+            if (!winners.user.name.contains(tweets.first().user.name)) {
+                winners.add(tweets.first() as Status)
+            }
+        }
+
+        return winners.collect { it.user.name }.unique().sort()
     }
 
     private Map getParams(HttpRequest<?> request) {
