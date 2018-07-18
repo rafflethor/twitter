@@ -9,12 +9,16 @@ import io.micronaut.http.client.Client
 import io.micronaut.http.client.RxHttpClient
 import twitter4j.Query
 import twitter4j.QueryResult
+import twitter4j.TwitterException
 import twitter4j.TwitterFactory
 
 import javax.inject.Inject
 
 @CompileStatic
 @Controller("/raffle")
+/*
+    Sample query: raffle?hashtag=piweek14&since=2018-07-16&until=2018-07-17
+ */
 class RaffleController {
     @Client("https://twitter.com")
     @Inject
@@ -23,59 +27,88 @@ class RaffleController {
     @Get("/")
     HttpResponse<Map> newRaffle(HttpRequest<?> request) {
 
+        Map<String, ?> params = getParams(request)
+        String twitterResponse = getUsersByHashtag(
+            params.hashtag.toString(),
+            params.until.toString(),
+            params.since.toString()
+        )
+
+        return HttpResponse.ok([twitterResponse: twitterResponse] as Map)
+            .header("X-My-Header", "Foo")
+    }
+
+    Map getUsersByHashtag(String hashtag, String until, String since) {
+        twitter4j.Twitter twitter = TwitterFactory.getSingleton()
+
+        Query query = getQuery(hashtag, until, since)
+        println "===> ${query.toString()}"
+
+        QueryResult twitterResponse
+        try {
+            twitterResponse = twitter.search(query)
+        } catch (TwitterException e) {
+            println "Couldn't connect: " + e
+            return [error: "Couldn't connect to " + e.message]
+        }
+
+        Map response = [
+            tweeters: twitterResponse.tweets.collect { it.user.name }.unique().sort(),
+            tweets  : twitterResponse.tweets.collect {[
+                    user : it.user.screenName,
+                    tweet: it.text,
+                    date : fixTimeZone(it.createdAt)
+                ]}
+                .sort { it.date }
+                .reverse()
+        ]
+
+        return response
+    }
+
+    private Query getQuery(String hashtag, String until, String since) {
+        Query query = new Query("#$hashtag -filter:retweets")
+        query.until(until) // Returns tweets created BEFORE the given date. 2018-06-07
+        query.since(since) // Returns tweets newer than the given date. 2018-06-05
+        query.resultType(Query.ResultType.recent)
+        query.sinceId(1)
+
+        return query
+    }
+
+    private Map getParams(HttpRequest<?> request) {
         Integer numWinners = request.getParameters()
             .getFirst("numWinners")
-            .orElse("0")
+            .orElse("5")
             .toInteger()
 
         String hashtag = request.getParameters()
             .getFirst("hashtag")
             .orElse("noHashTag")
 
-        String tweets = getUsersByHashTag("#$hashtag", numWinners)
-        println "==> $hashtag"
-        return HttpResponse.ok([numWinners: numWinners, tweets: tweets] as Map)
-            .header("X-My-Header", "Foo")
+        String since = request.getParameters()
+            .getFirst("since")
+            .orElse("")
+
+        String until = request.getParameters()
+            .getFirst("until")
+            .orElse("")
+
+        return [hashtag   : hashtag,
+                numWinners: numWinners,
+                since     : since,
+                until     : until
+        ]
     }
 
-    String getUsersByHashTag(String hashtag, Integer numWinners) {
-        twitter4j.Twitter twitter = TwitterFactory.getSingleton()
+    // TODO: Fix TimeZone using utcOffset
+    private Date fixTimeZone(Date date) {
+        Calendar cal = Calendar.getInstance()
+        cal.setTime(date)
+        cal.add(Calendar.HOUR, -9)
+        Date fixedTimeZone = cal.getTime()
 
-        Query query = new Query(hashtag)
-        query.count(100) //100 is the max allowed
-        QueryResult result = twitter.search(query)
-
-        return result.tweets.get(numWinners)
+        return fixedTimeZone
     }
 
-    /**
-     * Percentage encoding
-     *
-     * @return A encoded string
-     */
-    private String encode(String value) {
-        String encoded = ""
-        try {
-            encoded = URLEncoder.encode(value, "UTF-8")
-        } catch (Exception e) {
-            e.printStackTrace()
-        }
-        String sb = ""
-        char focus
-        for (int i = 0; i < encoded.length(); i++) {
-            focus = encoded.charAt(i)
-            if (focus == '*') {
-                sb += "%2A"
-            } else if (focus == '+') {
-                sb += "%20"
-            } else if (focus == '%' && i + 1 < encoded.length()
-                && encoded.charAt(i + 1) == '7' && encoded.charAt(i + 2) == 'E') {
-                sb += '~'
-                i += 2
-            } else {
-                sb += focus
-            }
-        }
-        return sb.toString()
-    }
 }
