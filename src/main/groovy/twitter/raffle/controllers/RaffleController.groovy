@@ -5,13 +5,9 @@ import io.micronaut.http.HttpRequest
 import io.micronaut.http.HttpResponse
 import io.micronaut.http.annotation.Controller
 import io.micronaut.http.annotation.Get
-import io.micronaut.http.client.Client
-import io.micronaut.http.client.RxHttpClient
 import twitter4j.*
 
-import javax.inject.Inject
 import java.text.SimpleDateFormat
-
 
 /**
     Connect to the twitter API to return tweets by hashtag accepting filters
@@ -20,29 +16,29 @@ import java.text.SimpleDateFormat
 @CompileStatic
 @Controller("/raffle")
 class RaffleController {
-    @Client("https://twitter.com")
-    @Inject
-    RxHttpClient httpClient
+    private static final String DATE_FORMAT = "EEE, MMMM dd yyyy, 'at' hh:mm"
+    private static final Locale LOCALE = Locale.ENGLISH
 
     @Get("/")
     HttpResponse<Map> newRaffle(HttpRequest<?> request) {
-
         Map<String, ?> params = getParams(request)
+
         List<Status> twitterResponse = getUsersByHashtag(
             params.hashtag.toString(),
             params.until.toString(),
             params.since.toString()
         )
 
-        Map<String, List> response = [ winners: [], tweeters:  [], tweets: [] ] as Map
+        Map<String, List> response = [ winners: [], allTweeters:  [], allTweets: [] ]
         if (twitterResponse) {
-            response.winners = getWinners(twitterResponse, params.numWinners as Integer)
-            response.tweeters = getTweeters(twitterResponse)
-            response.tweets = getTweets(twitterResponse)
+            List winners = getWinners(twitterResponse, params.numWinners as Integer)
+            Collections.shuffle(winners)
+            response.winners = winners
+            response.allTweeters = getTweeters(twitterResponse)
+            response.allTweets = getTweets(twitterResponse)
         }
 
         return HttpResponse.ok(response as Map)
-            .header("X-My-Header", "Foo")
     }
 
     List<Status> getUsersByHashtag(String hashtag, String until, String since) {
@@ -73,13 +69,15 @@ class RaffleController {
 
     private List getTweets(List<Status> tweets) {
         List result = tweets.collect {[
-            user : it.user.screenName,
+            name : it.user.name,
+            nickname: it.user.screenName,
+            avatar: it.user.biggerProfileImageURL,
             tweet: it.text,
-            date : new SimpleDateFormat("EEE, MMMM dd yyyy, 'at' hh:mm", Locale.ENGLISH)
+            date : new SimpleDateFormat(DATE_FORMAT, LOCALE)
                 .format(fixTimeZone(it.createdAt))
         ]}
         .sort { it.date }
-            .reverse()
+        .reverse()
 
         return result
     }
@@ -88,7 +86,7 @@ class RaffleController {
         return tweets.collect { it.user.name }.unique().sort()
     }
 
-    private List<String> getWinners(List<Status> tweets, Integer numWinners) {
+    private List getWinners(List<Status> tweets, Integer numWinners) {
         List<Status> winners = []
 
         while (winners.size() < numWinners) {
@@ -98,7 +96,7 @@ class RaffleController {
             }
         }
 
-        return winners.collect { it.user.name }.unique().sort()
+        return getTweets(winners)
     }
 
     private Map getParams(HttpRequest<?> request) {
@@ -135,5 +133,4 @@ class RaffleController {
 
         return fixedTimeZone
     }
-
 }
