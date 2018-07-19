@@ -1,5 +1,8 @@
 package twitter.raffle.services
 
+import groovy.transform.CompileStatic
+
+@CompileStatic
 class UtilService {
     static final String DATE_FORMAT = "EEE, MMMM dd yyyy, 'at' hh:mm"
     static final Locale LOCALE = Locale.ENGLISH

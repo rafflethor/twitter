@@ -1,7 +1,9 @@
 package twitter.raffle.services
 
+import groovy.transform.CompileStatic
 import twitter4j.Status
 
+@CompileStatic
 class RaffleService {
     TwitterService twitterService = new TwitterService()
 
