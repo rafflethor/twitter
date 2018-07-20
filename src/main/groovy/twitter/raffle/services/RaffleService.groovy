@@ -7,8 +7,13 @@ import twitter4j.Status
 class RaffleService {
     TwitterService twitterService = new TwitterService()
 
-    List getWinners(List<Status> tweets, Integer numWinners) {
+    List getWinners(List<Status> tweets, Integer numWinners = 3) {
         List<Status> winners = []
+
+        Integer maxWinners = twitterService.getTweetersFromTweets(tweets).size()
+        if (numWinners > maxWinners) {
+            numWinners = maxWinners
+        }
 
         while (winners.size() < numWinners) {
             Collections.shuffle tweets
